@@ -30,11 +30,8 @@ module Danger
     # @return  [void]
     #
     def process
-      JSON.parse(open(results_path).read)
-        .select { |result| modified_files.include?(result['filePath']) }
-        .reject { |result| result['messages'].length.zero? }
-        .reject { |result| result['messages'].first['message'].include? 'matching ignore pattern' }
-        .map { |result| send_comment(result) }
+      return if results_path.nil?
+      modified_files_results.map { |result| send_comment(result) }
     end
 
   private
@@ -44,11 +41,10 @@ module Danger
     # @return [void]
     #
     def send_comment(result)
-      dir = "#{Dir.pwd}/"
-      result['messages'].each do |r|
-        filename = result['filePath'].gsub(dir, '')
-        method = r['severity'] > 1 ? 'fail' : 'warn'
-        send(method, r['message'], file: filename, line: r['line'])
+      result['messages'].each do |result_message|
+        filename = result['filePath'].gsub("#{Dir.pwd}/", '')
+        method = result_message['severity'] > 1 ? 'fail' : 'warn'
+        send(method, result_message['message'], file: filename, line: result_message['line'])
       end
     end
 
@@ -56,6 +52,13 @@ module Danger
       @modified_files ||= (
         git.modified_files - git.deleted_files
       ) + git.added_files
+    end
+
+    def modified_files_results
+      JSON.parse(open(results_path).read)
+        .select { |result| modified_files.include?(result['filePath'].gsub("#{Dir.pwd}/", '')) }
+        .reject { |result| result['messages'].length.zero? }
+        .reject { |result| result['messages'].first['message'].include? 'matching ignore pattern' }
     end
   end
 end
