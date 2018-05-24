@@ -31,22 +31,10 @@ module Danger
     #
     def process
       return if results_path.nil?
-      modified_files_results.map { |result| send_comment(result) }
+      failures.each { |result| send_comment(result) }
     end
 
   private
-
-    # Send comment with Danger's warn or fail method.
-    #
-    # @return [void]
-    #
-    def send_comment(result)
-      result['messages'].each do |result_message|
-        filename = result['filePath'].gsub("#{Dir.pwd}/", '')
-        method = result_message['severity'] > 1 ? 'fail' : 'warn'
-        send(method, result_message['message'], file: filename, line: result_message['line'])
-      end
-    end
 
     def modified_files
       @modified_files ||= (
@@ -54,11 +42,16 @@ module Danger
       ) + git.added_files
     end
 
-    def modified_files_results
-      JSON.parse(open(results_path).read)
-        .select { |result| modified_files.include?(result['filePath'].gsub("#{Dir.pwd}/", '')) }
-        .reject { |result| result['messages'].length.zero? }
-        .reject { |result| result['messages'].first['message'].include? 'matching ignore pattern' }
+    def failures
+      ::Nokogiri.XML(open(results_path).read).xpath('//failure')
+        .map { |failure| EslintJunitFailure.new(failure: failure) }
+        .select { |failure| modified_files.include?(failure.file_path) }
+        .reject { |failure| failure.message.include?('matching ignore pattern') }
+    end
+
+    def send_comment(failure)
+      method = failure.severity == 'Error' ? 'fail' : 'warn'
+      send(method, failure.message, file: failure.file_path, line: failure.line)
     end
   end
 end
